@@ -16,7 +16,7 @@ from scipy import signal
 class FI:
     def __init__(self,xa,xfs,thresholds,decompose=True,
                     neighborhoods='auto',temporal_window=1,
-                    ncpus=1,efss=False):
+                    ncpus=1,efss=False,my_unc=False):
         """Fractional Ignorance.
 
         The "continuous" part of this scheme is not over thresholds in the raw
@@ -55,6 +55,8 @@ class FI:
                 number of times in the xfs/xa data.
             * Is there a way to summate over multiple variables and thresholds
                 to yield a total score (TFISS)?
+            * Manually specify an uncertainty component (e.g., when
+                using the bulk info entropy of an entire season) for my_unc
 
         Returns:
             Either FI or the decomposition as a dictionary.
@@ -418,4 +420,3 @@ class FI:
 	    return dec_arr
 	else:
 	    raise Exception
-
