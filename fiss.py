@@ -1,3 +1,7 @@
+""" Fractional Ignorance Skill Score, John R. Lawson 2018-2019 (CIMMS/NSSL)
+
+See __init__ below for usage.
+"""
 import os
 import operator
 import pdb
@@ -8,8 +12,6 @@ import random
 
 import numpy as N
 from scipy import signal
-
-import evac.utils.utils as utils
 
 class FI:
     def __init__(self,xa,xfs,thresholds,decompose=True,
@@ -51,6 +53,8 @@ class FI:
         TODO:
             * The temporal window should be constant, such that it matches the
                 number of times in the xfs/xa data.
+            * Is there a way to summate over multiple variables and thresholds
+                to yield a total score (TFISS)?
 
         Returns:
             Either FI or the decomposition as a dictionary.
@@ -256,7 +260,7 @@ class FI:
         # enforce 2D obs
         O = O[0,:,:]
         M = M[:,0,:,:]
-        Mf = utils.exceed_probs_2d(M,f,overunder='over',fmt='decimal')
+        Mf = self.exceed_probs_2d(M,f,overunder='over',fmt='decimal')
         Mf = self.no_binary(Mf)
         results = N.zeros_like(self.probthreshs)
         for iidx,yi in enumerate(self.probthreshs):
@@ -391,3 +395,27 @@ class FI:
             return True
         else:
             raise Exception("This is not a valid list, tuple etc.")
+
+    def exceed_probs_2d(self,arr3D,val,overunder='over',fmt='pc'):
+	""" Calculates the exceedence probability lat/lon field.
+	"""
+	assert arr3D.ndim == 3
+	nmems = arr3D.shape[0]
+	comparefunc = dict(over = N.greater,under = N.less)
+
+	# True/False if member meets condition (5D)
+	bool_arr = N.where(comparefunc[overunder](arr3D,val),1,0)
+
+	# Count members that exceed the threshold (4D)
+	count_arr = N.sum(bool_arr,axis=0)
+
+	if fmt == 'pc':
+	    # And convert to percentage (4D) for each time
+	    percent_arr = 100*(count_arr/nmems)
+	    return percent_arr # [times,levels,lats,lons]
+	elif fmt == 'decimal':
+	    dec_arr = count_arr/nmems
+	    return dec_arr
+	else:
+	    raise Exception
+
