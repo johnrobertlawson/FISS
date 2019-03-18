@@ -153,7 +153,9 @@ class FI:
 
         if self.efss:
             # "Bonus" score for efss
-            M_kernel_efss = N.ones([self.nens,tempwindow,neigh,neigh])
+            # M_kernel_efss = N.ones([self.nens,tempwindow,neigh,neigh])
+            # JRL: Derek Stratman edit. TO TEST FURTHER
+            M_kernel_efss = N.ones([2*self.nens,tempwindow,neigh,neigh])
             M_efss_raw = signal.fftconvolve(Im,M_kernel_efss,mode='same')
             total = (neigh**2) * tempwindow * self.nens
             M_efss = N.abs(N.around(M_efss_raw)/total)
@@ -161,6 +163,7 @@ class FI:
             assert N.all(M_efss <= 1.0)
 
         # Next, apply the 3D kernel
+        # JRL: TODO: Check below, can we use 2*nens?
         M_kernel = N.ones([1,tempwindow,neigh,neigh])
         M = signal.fftconvolve(Im,M_kernel,mode='same')
 
