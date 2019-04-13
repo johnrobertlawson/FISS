@@ -13,10 +13,11 @@ import random
 import numpy as N
 from scipy import signal
 
-class FI:
-    def __init__(self,xa,xfs,thresholds,decompose=True,
+class FISS:
+    def __init__(self,xa,xfs,thresholds=None,thresholds_obs=None,
+                    thresholds_fcst=None,decompose=True,
                     neighborhoods='auto',temporal_window=1,
-                    ncpus=1,efss=False,my_unc=False):
+                    ncpus=1,efss=False,my_unc=False,):
         """Fractional Ignorance.
 
         The "continuous" part of this scheme is not over thresholds in the raw
@@ -28,17 +29,23 @@ class FI:
         Returns:
             dictionary of the form:
 
-            dict[threshold][neighborhood][temporal_window][timestep][score] = x
+            dict[threshold_fcst][neighborhood][temporal_window][timestep][score] = x
 
             There is N.NaN returned for the first and last (W-1)/2 timesteps
             for temporal window W. The score keys are strings of FI, UNC,
             REL, RES, FISS (the skill score).
+
+            The user needs to look up self.thresholds_fcst and self.thresholds_obs
+            in the case these thresholds are different (e.g. using percentiles).
 
         Args:
             xa: 3-D observation array of size (ntimes,nlat, nlon).
             xfs: 4-D forecast array of size (N,ntimes,nlat,nlon) where N is
                 ensemble size and ntimes is the number of time steps.
             thresholds (tuple,list): thresholding to apply to input data.
+            thresholds_obs, thresholds_fcst: use a different threshold
+                for obs/fcst, e.g., if verifying percentiles, or
+                perhaps exceeding a custom threshold.
             neighborhoods: if 'auto', use smallest to largest spatial
                 kernels. These can accessed after processing with the
                 self.neighborhoods attribute, or the keys of the
@@ -75,8 +82,22 @@ class FI:
         # 0 -> 0.01 and 1 -> 0.99 (to address underdispersion).
         self.probthreshs = self.no_binary(N.linspace(0,1,self.nens+1))
 
-        check = self._assert_list(thresholds)
-        self.thresholds = thresholds
+        if thresholds_fcst is None:
+            # Use same threshold for both obs and fcst
+            assert thresholds_obs is None
+            assert thresholds is not None
+            self.thresholds_fcst = thresholds
+            self.thresholds_obs = thresholds
+        else:
+            assert thresholds_obs is not None
+            assert thresholds is None
+            self.thresholds_obs = thresholds_obs
+            self.thresholds_fcst = thresholds_fcst
+
+        # check = self._assert_list(thresholds)
+        check = self._assert_list(self.thresholds_fcst)
+        check = self._assert_list(self.thresholds_obs)
+        # self.thresholds = thresholds
 
         if neighborhoods == 'auto':
             # The biggest box we can fit in the domain
@@ -96,8 +117,10 @@ class FI:
         self.decompose = decompose
 
         # Create results dictionary
+        # User will have to convert thresholds_fcst/_obs 
+        # JRL TODO: need to make threshold 2-dec place string?
         self.results = {th: {n: { tw: {} for tw in (self.temporal_window,)}
-                        for n in self.neighborhoods} for th in self.thresholds}
+                        for n in self.neighborhoods} for th in self.thresholds_fcst}
 
         self.ncpus = ncpus
         namedtup = self.parallelise()
@@ -149,7 +172,11 @@ class FI:
         tidxs = slice(self.tidx-int((tempwindow-1)/2),
                         1+self.tidx+int((tempwindow-1)/2))
         Im = N.where(self.xfs[:,tidxs,:,:] > thresh, 1, 0)
-        Io = N.where(self.xa[tidxs,:,:] > thresh, 1, 0)
+
+        # Look up obs threshold that corresponds to the fcst threshold
+        idx = self.thresholds_fcst.index(thresh)
+        thresh_obs = self.thresholds_obs[idx]
+        Io = N.where(self.xa[tidxs,:,:] > thresh_obs, 1, 0)
 
         if self.efss:
             # "Bonus" score for efss
@@ -390,7 +417,7 @@ class FI:
     def generate_loop(self):
         """ The randomisation is to partly optimise the parallelisation.
         """
-        th_rand = random.sample(list(self.thresholds),len(self.thresholds))
+        th_rand = random.sample(list(self.thresholds_fcst),len(self.thresholds_fcst))
         n_rand = random.sample(list(self.neighborhoods),len(self.neighborhoods))
         for thresh, neigh in itertools.product(th_rand,n_rand):
             yield thresh, neigh, self.temporal_window
