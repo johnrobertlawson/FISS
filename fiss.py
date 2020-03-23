@@ -13,11 +13,14 @@ import random
 import numpy as N
 from scipy import signal
 
+# JRL: for now...
+N.warnings.filterwarnings('ignore')
+
 class FISS:
     def __init__(self,xa,xfs,thresholds=None,thresholds_obs=None,
                     thresholds_fcst=None,decompose=True,
                     neighborhoods='auto',temporal_window=1,
-                    ncpus=1,efss=False,my_unc=False,):
+                    ncpus=1,efss=False,my_unc=False,skip_fiss=False):
         """Fractional Ignorance.
 
         The "continuous" part of this scheme is not over thresholds in the raw
@@ -69,6 +72,7 @@ class FISS:
             Either FI or the decomposition as a dictionary.
         """
         self.efss = efss
+        self.skip_fiss = skip_fiss
 
         assert xfs.shape[1:] == xa.shape
         if (xfs.ndim == 3) and (xa.ndim == 2):
@@ -117,7 +121,7 @@ class FISS:
         self.decompose = decompose
 
         # Create results dictionary
-        # User will have to convert thresholds_fcst/_obs 
+        # User will have to convert thresholds_fcst/_obs
         # JRL TODO: need to make threshold 2-dec place string?
         self.results = {th: {n: { tw: {} for tw in (self.temporal_window,)}
                         for n in self.neighborhoods} for th in self.thresholds_fcst}
@@ -247,41 +251,48 @@ class FISS:
 
         # pdb.set_trace()
         # for fidx, fracval in enumerate(N.linspace(0,1,num=num)):
-        for fidx, fracval in enumerate(fracset):
-            REL[fidx] = self.compute_rel(M,O,fracval)
-            RES[fidx] = self.compute_res(M,O,fracval)
-            UNC[fidx] = self.compute_unc(O,fracval)
-        FISS = (RES-REL)/UNC
-        FI = REL - RES + UNC
+        if not self.skip_fiss:
+            for fidx, fracval in enumerate(fracset):
+                REL[fidx] = self.compute_rel(M,O,fracval)
+                RES[fidx] = self.compute_res(M,O,fracval)
+                UNC[fidx] = self.compute_unc(O,fracval)
+            FISS = (RES-REL)/UNC
+            FI = REL - RES + UNC
 
 
-        # TODO
-        # Outside the domain (e.g. using a large neigh)
-        # IS this nans or what? Bias in the score?
-        # Does it affect uncertainty?
+            # TODO
+            # Outside the domain (e.g. using a large neigh)
+            # IS this nans or what? Bias in the score?
+            # Does it affect uncertainty?
 
-        frac_distances = N.diff(fracset)
-        # pdb.set_trace()
+            frac_distances = N.diff(fracset)
+            # pdb.set_trace()
 
-        rel = N.nansum(frac_distances * REL[:-1])
-        res = N.nansum(frac_distances * RES[:-1])
-        unc = N.nansum(frac_distances * UNC[:-1])
-        fiss = N.nansum(frac_distances * FISS[:-1])
-        fi = N.nansum(frac_distances * FI[:-1])
+            rel = N.nansum(frac_distances * REL[:-1])
+            res = N.nansum(frac_distances * RES[:-1])
+            unc = N.nansum(frac_distances * UNC[:-1])
+            fiss = N.nansum(frac_distances * FISS[:-1])
+            fi = N.nansum(frac_distances * FI[:-1])
 
         # fi = rel - res + unc
         # fiss = (res - rel)/unc
-
+        else:
+            rel = 0
+            res = 0
+            unc = 0
+            fiss = 0
+            fi = 0
         scores = dict(REL=rel,RES=res,UNC=unc,FI=fi, FISS=fiss)
-        print("Scores: REL = {:.3f}, RES = {:.3f}, UNC = {:.3f}; FI = {:.3f}; FISS = {:.3f}".format(
-                scores['REL'],scores['RES'],scores['UNC'],scores['FI'],scores['FISS']))
+        #print("Scores: REL = {:.3f}, RES = {:.3f}, UNC = {:.3f}; FI = {:.3f};
+                # "FISS = {:.3f}".format(
+                # scores['REL'],scores['RES'],scores['UNC'],scores['FI'],scores['FISS']))
 
         if self.efss:
             MO_diff = (M_efss - O)**2
             FBS_ref = M_efss**2 + O**2
             efss = 1 - (N.nanmean(MO_diff) / N.nanmean(FBS_ref))
             scores['eFSS'] = efss
-            print("Bonus eFSS = ",efss)
+            # print("Bonus eFSS = ",efss)
 
         return scores, thresh, neigh, tempwindow
 
@@ -396,12 +407,18 @@ class FISS:
             This is because there is no variability,
             so forecasts can't be rated for their ability
             to capture it.
+
+            If z = 0, no points have passed a threshold.
+            Again, nan.
             """
-            try:
-                res = pyi * (zi*N.log2(zi/z) +
+            if (z==0) or (z==1):
+                return N.nan
+
+            #try:
+            res = pyi * (zi*N.log2(zi/z) +
                     (1-zi)*N.log2((1-zi)/(1-z)))
-            except ZeroDivisionError:
-                res = N.nan
+            #except ZeroDivisionError:
+            #    res = N.nan
             return res
         return self.eq_14_16(M,O,f,res_eq)
 
@@ -411,6 +428,8 @@ class FISS:
         """
         # z = N.count(O==f)/O.size
         z = self.compute_z(O,f)
+        if z == 0:
+            return 0
         UNC = -z*N.log2(z) - (1-z)*N.log2(1-z)
         return UNC
 
